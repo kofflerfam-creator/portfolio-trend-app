@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import time
 from datetime import date, timedelta
 from io import BytesIO
 
@@ -33,6 +34,20 @@ PORTFOLIOS = {
 }
 
 # -------------------------------------------------
+# SAFE YAHOO FETCH (FIXES RANDOM DROPS)
+# -------------------------------------------------
+def get_history_safe(ticker, retries=1, pause=1.5):
+    for _ in range(retries + 1):
+        try:
+            hist = yf.Ticker(ticker).history(period="3y")
+            if not hist.empty:
+                return hist
+        except Exception:
+            pass
+        time.sleep(pause)
+    return pd.DataFrame()
+
+# -------------------------------------------------
 # HELPERS
 # -------------------------------------------------
 def pct_change(current, past):
@@ -52,8 +67,23 @@ rows = []
 
 for portfolio, tickers in PORTFOLIOS.items():
     for ticker in tickers:
-        hist = yf.Ticker(ticker).history(period="3y")
+        hist = get_history_safe(ticker)
+
+        # If Yahoo fails completely, show it clearly
         if hist.empty:
+            rows.append({
+                "Portfolio": portfolio,
+                "Ticker": ticker,
+                "Current Price": None,
+                "MTD %": None,
+                "YTD %": None,
+                "3M %": None,
+                "6M %": None,
+                "1Y %": None,
+                "2Y %": None,
+                "Trend Score": None,
+                "Signal": "Data Missing"
+            })
             continue
 
         current_price = hist["Close"].iloc[-1]
@@ -104,19 +134,16 @@ df = (
     .round(0)
 )
 
-# Convert floats to integers (clean look, blanks preserved)
 df = df.astype(
     {c: "Int64" for c in df.columns if df[c].dtype == "float64"}
 )
 
 st.subheader("Download")
-# (button is added later, after Excel formatting)
-
 st.subheader("Portfolio Table")
 st.dataframe(df, use_container_width=True)
 
 # -------------------------------------------------
-# EXCEL EXPORT WITH FORMATTING
+# EXCEL EXPORT (FORMATTED)
 # -------------------------------------------------
 buffer = BytesIO()
 df.to_excel(buffer, index=False)
@@ -125,10 +152,8 @@ buffer.seek(0)
 wb = load_workbook(buffer)
 ws = wb.active
 
-# Fonts and borders
 header_font = Font(name="Calibri", bold=True)
 cell_font = Font(name="Calibri")
-
 border = Border(
     left=Side(style="thin"),
     right=Side(style="thin"),
@@ -136,29 +161,23 @@ border = Border(
     bottom=Side(style="thin")
 )
 
-# Fills
-fill_negative = PatternFill("solid", fgColor="F4C7C3")  # Red for negatives
-fill_stay = PatternFill("solid", fgColor="C6EFCE")      # Green
-fill_watch = PatternFill("solid", fgColor="FFEB9C")     # Yellow
-fill_exit = PatternFill("solid", fgColor="F4C7C3")      # Red
+fill_negative = PatternFill("solid", fgColor="F4C7C3")
+fill_stay = PatternFill("solid", fgColor="C6EFCE")
+fill_watch = PatternFill("solid", fgColor="FFEB9C")
+fill_exit = PatternFill("solid", fgColor="F4C7C3")
 
-# Identify Signal column
 signal_col = None
 for i, cell in enumerate(ws[1], start=1):
     if cell.value == "Signal":
         signal_col = i
 
-# Apply styles
 for r, row in enumerate(ws.iter_rows(), start=1):
-    for c, cell in enumerate(row, start=1):
+    for cell in row:
         cell.font = header_font if r == 1 else cell_font
         cell.border = border
-
-        # Shade negative numeric values
         if r > 1 and isinstance(cell.value, (int, float)) and cell.value < 0:
             cell.fill = fill_negative
 
-    # Signal coloring
     if r > 1 and signal_col:
         sig = ws.cell(row=r, column=signal_col)
         if sig.value == "Stay":
@@ -168,10 +187,8 @@ for r, row in enumerate(ws.iter_rows(), start=1):
         elif sig.value == "Exit Risk":
             sig.fill = fill_exit
 
-# Freeze header row
 ws.freeze_panes = "A2"
 
-# Auto column widths
 for col in ws.columns:
     max_len = max(len(str(c.value)) if c.value else 0 for c in col)
     ws.column_dimensions[col[0].column_letter].width = max_len + 2
@@ -186,3 +203,4 @@ st.download_button(
     file_name="portfolio_trend_report.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+``
