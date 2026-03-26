@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import os
 
 st.set_page_config(layout="wide")
-st.title("📊 Portfolio Trend Analyzer")
+st.title("Portfolio Trend Analyzer")
 
 TICKERS = [
     "WDC","MU","KTOS","RKLB","VRT",
@@ -67,11 +67,11 @@ for ticker in TICKERS:
     trend_score = round(sum(trend_vals) / len(trend_vals), 2) if trend_vals else None
 
     if p3m and p6m and p1y and p3m > 0 and p6m > 0 and p1y > 0:
-        signal = "✅ Stay"
+        signal = "Stay"
     elif p3m and p6m and p1y and p3m < 0 and p6m < 0 and p1y < 0:
-        signal = "❌ Exit Risk"
+        signal = "Exit Risk"
     else:
-        signal = "⚠️ Watch"
+        signal = "Watch"
 
     rows.append({
         "Ticker": ticker,
